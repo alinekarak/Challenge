@@ -1,0 +1,106 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Apr  1 14:35:05 2022
+
+@author: fsamw
+"""
+
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Mar 28 14:19:12 2022
+
+@author: fsamw
+"""
+
+# 0. Libraries
+import numpy as np
+import pandas as pd
+
+# 1. Get a general idea about the stations and select those I will focus on 
+
+file1 = r"C:\Users\fsamw\Documents\Aline\AT&T challenge\isd-history.csv"
+
+history_df = pd.read_csv(file1)
+
+# Get the frequency of countries 
+print(history_df['CTRY'].value_counts())
+
+# To reduce the data set I will work only with US
+
+history_df2=history_df[history_df.CTRY == "US"]
+# I will work on stations with ost recent data ==> 2021 to have full year data points
+history_df3=history_df2[history_df2.END >= 20211231 ]
+history_df4=history_df3[history_df3.BEGIN <= 20210101]
+print(history_df4['STATE'].value_counts())
+
+history_df5=history_df4[history_df4['STATE'].isin(["TX",'AK'])]
+
+colspecs = [(0, 4), (6, 7), (9, 11), (12, 13), (14, 19), (20, 24), (26, 31), (32, 37),(38, 43),(44, 49),(50, 55),(56,61)]
+
+
+#I will take top 2 stations states thus AK, TX
+#Read the data from noaa link
+l=[[]]
+for index, row in history_df5.iterrows():
+    usaf=str(row["USAF"])
+    wban=str(row["WBAN"])
+    state=row["STATE"]
+    link='https://www.ncei.noaa.gov/pub/data/noaa/isd-lite/2021/'+ usaf + '-' + wban +'-2021.gz'  
+    try:
+        df=pd.read_fwf(link,compression='gzip',  colspecs=colspecs, names=['year', 'month', 'day', 'hour', 'air_temp', 'dew_point_temp','sea_level_pressure','wind_dir','wind_speed_rate','sky_cond','liquid_pre1','liquid_pre6'])
+        df2= df.replace(-9999, "NA")
+        #df3=df2.groupby(['year','month']).mean()
+        df2['state']=state
+        df3=df2.dropna()
+        l.append(df3)
+       
+    except:
+        pass # doing nothing on exception
+
+  
+#Concate the data points
+test_list=l
+del test_list[0]   
+result = pd.concat(test_list)
+#Remove NAs
+result2=result[['state','air_temp', 'dew_point_temp','wind_dir','wind_speed_rate']]
+result3=result2.dropna()
+result3.dropna()
+result3.isna().sum()
+result3= result3.replace("NA", 0)
+result3= result3.replace("-", 0)
+result3["state2"]=np.where(result3['state']=="TX",1,0)
+
+#3. Model I will build decision tree that predicts based on weather conditions if the location is TX or AK
+from sklearn.tree import DecisionTreeClassifier # Import Decision Tree Classifier
+from sklearn.model_selection import train_test_split # Import train_test_split function
+from sklearn import metrics #Import scikit-learn metrics module for accuracy calculation
+
+#split dataset in features and target variable
+
+
+# I removed 'sky_cond','liquid_pre1','liquid_pre6' as mainly they are null values 
+feature_cols = ['air_temp', 'dew_point_temp','wind_dir','wind_speed_rate']
+X = result3[feature_cols] # Features
+y = result3.state # Target variable
+
+# Split dataset into training set and test set
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=1) # 70% training and 30% test
+
+# Create Decision Tree classifer object
+clf = DecisionTreeClassifier(criterion="entropy", max_depth=3)
+
+# Train Decision Tree Classifer
+clf = clf.fit(X_train,y_train)
+
+#Predict the response for test dataset
+y_pred = clf.predict(X_test)
+
+# Model Accuracy, how often is the classifier correct?
+print("Accuracy:",metrics.accuracy_score(y_test, y_pred))
+
+#plot the tree
+from sklearn.datasets import load_iris
+from sklearn import tree
+
+tree.plot_tree(clf)
